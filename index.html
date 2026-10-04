@@ -71,7 +71,7 @@
             background: #f7faff;
             border-radius: 18px;
             padding: 12px 10px;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
             border: 1px solid #e9eff5;
         }
         .params .item {
@@ -90,6 +90,28 @@
             font-size: 13px;
             font-weight: 400;
             color: #5a7a9a;
+        }
+
+        /* ===== 低谷时段提示条 ===== */
+        .valley-info {
+            background: #f0f7ff;
+            border-radius: 12px;
+            padding: 10px 14px;
+            margin-bottom: 18px;
+            font-size: 13px;
+            color: #2a4a6a;
+            border: 1px dashed #b0cce0;
+            line-height: 1.6;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .valley-info .emoji {
+            font-size: 18px;
+        }
+        .valley-info .highlight {
+            font-weight: 700;
+            color: #1a6bb0;
         }
 
         /* ===== 滑块组 ===== */
@@ -229,7 +251,7 @@
             opacity: 0.6;
         }
 
-        /* ===== 时间输入（原生，不做任何限制） ===== */
+        /* ===== 时间输入 ===== */
         .time-group {
             margin-bottom: 18px;
         }
@@ -256,6 +278,11 @@
         }
         .time-group input[type="time"]:focus {
             border-color: #1a6bb0;
+        }
+        .time-group .auto-hint {
+            font-size: 12px;
+            color: #7a8a9a;
+            margin-top: 4px;
         }
 
         /* ===== 计算按钮 ===== */
@@ -316,6 +343,17 @@
             font-weight: 700;
             color: #0b2a44;
         }
+        .result .warning {
+            font-size: 13px;
+            color: #c0392b;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid #d0e0ee;
+            display: none;
+        }
+        .result .warning.show {
+            display: block;
+        }
 
         .footer {
             margin-top: 22px;
@@ -348,6 +386,12 @@
         <div class="item">电池容量<span class="num">81 <small>kWh</small></span></div>
         <div class="item">充电功率<span class="num">6.372 <small>kW</small></span></div>
         <div class="item">目标下限<span class="num">≥80 <small>%</small></span></div>
+    </div>
+
+    <!-- 低谷时段提示 -->
+    <div class="valley-info" id="valleyInfo">
+        <span class="emoji">🌙</span>
+        <span id="valleyText">低谷时段：22:00 → 08:00（3-6月、10-11月）</span>
     </div>
 
     <!-- 当前电量 -->
@@ -384,14 +428,16 @@
         <button data-mode="end">⏰ 结束时间</button>
     </div>
 
-    <!-- 时间输入（原生，无任何限制） -->
+    <!-- 时间输入 -->
     <div id="startTimeGroup" class="time-group">
         <label for="startTime">充电起始时间</label>
         <input type="time" id="startTime" value="01:00" />
+        <div class="auto-hint" id="startAutoHint">已自动设为低谷开始时间</div>
     </div>
     <div id="endTimeGroup" class="time-group hidden">
         <label for="endTime">充电结束时间</label>
         <input type="time" id="endTime" value="07:00" />
+        <div class="auto-hint" id="endAutoHint">已自动设为低谷结束时间</div>
     </div>
 
     <!-- 计算按钮 -->
@@ -402,6 +448,7 @@
         <div class="label" id="resultLabel">预计充电结束时间</div>
         <div class="time" id="resultTime">--:--</div>
         <div class="detail">充电时长：<span id="durationDisplay">0</span></div>
+        <div class="warning" id="warningMsg"></div>
     </div>
 
     <div class="footer">数据仅供参考 · 实际受温度、BMS等因素影响</div>
@@ -425,6 +472,10 @@
         const resultLabel = document.getElementById('resultLabel');
         const resultTime = document.getElementById('resultTime');
         const durationDisplay = document.getElementById('durationDisplay');
+        const warningMsg = document.getElementById('warningMsg');
+        const valleyText = document.getElementById('valleyText');
+        const startAutoHint = document.getElementById('startAutoHint');
+        const endAutoHint = document.getElementById('endAutoHint');
 
         const currentMinus = document.getElementById('currentMinus');
         const currentPlus = document.getElementById('currentPlus');
@@ -436,8 +487,75 @@
         const BATTERY = 81;
         const POWER = 6.372;
 
-        // --- 强制结束时间默认值 ---
-        endTime.value = '07:00';
+        // --- 低谷时段配置 ---
+        function getValleyPeriod(month) {
+            // month: 1-12
+            if (month >= 3 && month <= 6) {
+                return { start: '22:00', end: '08:00', desc: '22:00 → 08:00（3-6月、10-11月）' };
+            } else if (month >= 7 && month <= 9) {
+                return { start: '01:00', end: '07:00', desc: '01:00 → 07:00（7-9月）' };
+            } else if (month === 10 || month === 11) {
+                return { start: '22:00', end: '08:00', desc: '22:00 → 08:00（3-6月、10-11月）' };
+            } else {
+                // 12, 1, 2
+                return { start: '00:00', end: '08:00', desc: '00:00 → 08:00（12月、1-2月）' };
+            }
+        }
+
+        // --- 获取当前月份的低谷时段 ---
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const valley = getValleyPeriod(currentMonth);
+
+        // --- 更新低谷提示文字 ---
+        valleyText.innerHTML = `低谷时段：<span class="highlight">${valley.desc}</span>`;
+
+        // --- 自动填充时间 ---
+        function autoFillTimes() {
+            startTime.value = valley.start;
+            endTime.value = valley.end;
+        }
+        autoFillTimes();
+
+        // --- 计算时间差（分钟，支持跨天） ---
+        function timeToMinutes(timeStr) {
+            const [h, m] = timeStr.split(':').map(Number);
+            return h * 60 + m;
+        }
+
+        function minutesToTime(minutes) {
+            minutes = ((minutes % 1440) + 1440) % 1440;
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+        }
+
+        // --- 判断一个时间是否在低谷时段内（支持跨天） ---
+        function isInValley(timeStr, valleyStart, valleyEnd) {
+            const t = timeToMinutes(timeStr);
+            const vs = timeToMinutes(valleyStart);
+            const ve = timeToMinutes(valleyEnd);
+            if (vs <= ve) {
+                // 不跨天
+                return t >= vs && t <= ve;
+            } else {
+                // 跨天（如22:00 → 08:00）
+                return t >= vs || t <= ve;
+            }
+        }
+
+        // --- 低谷时段总时长（分钟） ---
+        function getValleyDuration(valleyStart, valleyEnd) {
+            const vs = timeToMinutes(valleyStart);
+            const ve = timeToMinutes(valleyEnd);
+            if (vs <= ve) {
+                return ve - vs;
+            } else {
+                return (1440 - vs) + ve;
+            }
+        }
+
+        const valleyDurationMin = getValleyDuration(valley.start, valley.end);
 
         // --- 滑块填充 ---
         function updateSliderFill(slider) {
@@ -556,6 +674,7 @@
 
             let resultTimeStr = '';
             let labelText = '';
+            let warning = '';
 
             if (currentMode === 'start') {
                 const startVal = startTime.value;
@@ -567,10 +686,17 @@
                 const [h, m] = startVal.split(':').map(Number);
                 let totalMinutes = h * 60 + m + minutesTotal;
                 totalMinutes %= 1440;
-                const rh = Math.floor(totalMinutes / 60);
-                const rm = totalMinutes % 60;
-                resultTimeStr = String(rh).padStart(2, '0') + ':' + String(rm).padStart(2, '0');
+                resultTimeStr = minutesToTime(totalMinutes);
                 labelText = '预计充电结束时间';
+
+                // 检查结束时间是否超出低谷时段
+                if (!isInValley(resultTimeStr, valley.start, valley.end)) {
+                    warning = '⚠️ 预计结束时间已超出低谷时段，部分电量可能在非低谷时段充电。';
+                }
+                // 检查充电时长是否超过低谷总时长
+                if (minutesTotal > valleyDurationMin) {
+                    warning = '⚠️ 所需充电时长超过低谷时段总时长，无法完全在低谷时段内完成。';
+                }
             } else {
                 const endVal = endTime.value;
                 if (!endVal) {
@@ -581,15 +707,29 @@
                 const [h, m] = endVal.split(':').map(Number);
                 let totalMinutes = h * 60 + m - minutesTotal;
                 if (totalMinutes < 0) totalMinutes += 1440;
-                const rh = Math.floor(totalMinutes / 60);
-                const rm = totalMinutes % 60;
-                resultTimeStr = String(rh).padStart(2, '0') + ':' + String(rm).padStart(2, '0');
+                resultTimeStr = minutesToTime(totalMinutes);
                 labelText = '建议充电开始时间';
+
+                // 检查开始时间是否在低谷时段内
+                if (!isInValley(resultTimeStr, valley.start, valley.end)) {
+                    warning = '⚠️ 建议开始时间不在低谷时段内，请手动调整结束时间或接受非低谷充电。';
+                }
+                if (minutesTotal > valleyDurationMin) {
+                    warning = '⚠️ 所需充电时长超过低谷时段总时长，无法完全在低谷时段内完成。';
+                }
             }
 
             resultLabel.textContent = labelText;
             resultTime.textContent = resultTimeStr;
             durationDisplay.textContent = durationStr;
+
+            if (warning) {
+                warningMsg.textContent = warning;
+                warningMsg.classList.add('show');
+            } else {
+                warningMsg.classList.remove('show');
+            }
+
             resultArea.classList.add('show');
         }
 
