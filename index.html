@@ -391,7 +391,7 @@
     <!-- 低谷时段提示 -->
     <div class="valley-info" id="valleyInfo">
         <span class="emoji">🌙</span>
-        <span id="valleyText">低谷时段：22:00 → 08:00（3-6月、10-11月）</span>
+        <span id="valleyText">低谷时段加载中...</span>
     </div>
 
     <!-- 当前电量 -->
@@ -431,12 +431,12 @@
     <!-- 时间输入 -->
     <div id="startTimeGroup" class="time-group">
         <label for="startTime">充电起始时间</label>
-        <input type="time" id="startTime" value="01:00" />
+        <input type="time" id="startTime" value="22:00" />
         <div class="auto-hint" id="startAutoHint">已自动设为低谷开始时间</div>
     </div>
     <div id="endTimeGroup" class="time-group hidden">
         <label for="endTime">充电结束时间</label>
-        <input type="time" id="endTime" value="07:00" />
+        <input type="time" id="endTime" value="08:00" />
         <div class="auto-hint" id="endAutoHint">已自动设为低谷结束时间</div>
     </div>
 
@@ -491,14 +491,14 @@
         function getValleyPeriod(month) {
             // month: 1-12
             if (month >= 3 && month <= 6) {
-                return { start: '22:00', end: '08:00', desc: '22:00 → 08:00（3-6月、10-11月）' };
+                return { start: '22:00', end: '08:00', desc: '春秋季低谷时段：22:00 → 08:00' };
             } else if (month >= 7 && month <= 9) {
-                return { start: '01:00', end: '07:00', desc: '01:00 → 07:00（7-9月）' };
+                return { start: '01:00', end: '07:00', desc: '夏季低谷时段：01:00 → 07:00' };
             } else if (month === 10 || month === 11) {
-                return { start: '22:00', end: '08:00', desc: '22:00 → 08:00（3-6月、10-11月）' };
+                return { start: '22:00', end: '08:00', desc: '春秋季低谷时段：22:00 → 08:00' };
             } else {
                 // 12, 1, 2
-                return { start: '00:00', end: '08:00', desc: '00:00 → 08:00（12月、1-2月）' };
+                return { start: '00:00', end: '08:00', desc: '冬季低谷时段：00:00 → 08:00' };
             }
         }
 
@@ -508,7 +508,7 @@
         const valley = getValleyPeriod(currentMonth);
 
         // --- 更新低谷提示文字 ---
-        valleyText.innerHTML = `低谷时段：<span class="highlight">${valley.desc}</span>`;
+        valleyText.innerHTML = `<span class="highlight">${valley.desc}</span>`;
 
         // --- 自动填充时间 ---
         function autoFillTimes() {
@@ -536,10 +536,8 @@
             const vs = timeToMinutes(valleyStart);
             const ve = timeToMinutes(valleyEnd);
             if (vs <= ve) {
-                // 不跨天
                 return t >= vs && t <= ve;
             } else {
-                // 跨天（如22:00 → 08:00）
                 return t >= vs || t <= ve;
             }
         }
@@ -689,11 +687,9 @@
                 resultTimeStr = minutesToTime(totalMinutes);
                 labelText = '预计充电结束时间';
 
-                // 检查结束时间是否超出低谷时段
                 if (!isInValley(resultTimeStr, valley.start, valley.end)) {
                     warning = '⚠️ 预计结束时间已超出低谷时段，部分电量可能在非低谷时段充电。';
                 }
-                // 检查充电时长是否超过低谷总时长
                 if (minutesTotal > valleyDurationMin) {
                     warning = '⚠️ 所需充电时长超过低谷时段总时长，无法完全在低谷时段内完成。';
                 }
@@ -710,7 +706,6 @@
                 resultTimeStr = minutesToTime(totalMinutes);
                 labelText = '建议充电开始时间';
 
-                // 检查开始时间是否在低谷时段内
                 if (!isInValley(resultTimeStr, valley.start, valley.end)) {
                     warning = '⚠️ 建议开始时间不在低谷时段内，请手动调整结束时间或接受非低谷充电。';
                 }
